@@ -1,0 +1,8 @@
+## Interface: 16001
+## Title: SelfBuffs
+## Notes: Blizzard-style player buff/debuff frames, movable
+## Author: Adam
+## Version: @project-version@
+## SavedVariables: SelfBuffsDB
+## OptionalDeps: tullaCTC
+SelfBuffs.lua

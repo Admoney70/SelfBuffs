@@ -1,0 +1,4 @@
+package-as: SelfBuffs
+
+ignore:
+  - README.md
