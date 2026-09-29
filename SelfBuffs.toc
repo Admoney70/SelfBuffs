@@ -3,6 +3,7 @@
 ## Notes: Blizzard-style player buff/debuff frames, movable
 ## Author: Adam
 ## Version: @project-version@
+## X-Curse-Project-ID: 1718593
 ## SavedVariables: SelfBuffsDB
 ## OptionalDeps: tullaCTC
 SelfBuffs.lua
