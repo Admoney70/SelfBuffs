@@ -5,5 +5,5 @@
 ## Version: @project-version@
 ## X-Curse-Project-ID: 1718593
 ## SavedVariables: SelfBuffsDB
-## OptionalDeps: tullaCTC
+## OptionalDeps: tullaCTC, LibSharedMedia-3.0, SharedMedia
 SelfBuffs.lua

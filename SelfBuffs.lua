@@ -18,6 +18,7 @@ local defaults = {
   reverse = false,
   cdText = true,     -- countdown numbers on the swipe
   cdTextSize = 0,    -- 0 = auto (45% of icon size)
+  cdFont = "Default", -- font name; see FontList()
   cdHideAbove = 0,   -- seconds; hide the numbers while more than this remains (0 = never)
   cdStyler = "selfbuffs", -- who styles the numbers when tullaCTC is loaded: "selfbuffs" | "tullactc"
   buffs   = { "TOPRIGHT", "UIParent", "TOPRIGHT", -205, -13 },
@@ -132,6 +133,44 @@ local function CountdownSize()
   return math.max(8, math.floor(DB.size * 0.45 + 0.5))
 end
 
+-- Fonts for the countdown numbers: the client's own, plus any registered
+-- with LibSharedMedia when some other addon has loaded it.
+local BUILTIN_FONTS = {
+  { "Default", function() return STANDARD_TEXT_FONT end },
+  { "Arial Narrow", "Fonts\\ARIALN.TTF" },
+  { "Friz Quadrata TT", "Fonts\\FRIZQT__.TTF" },
+  { "Morpheus", "Fonts\\MORPHEUS.TTF" },
+  { "Skurri", "Fonts\\SKURRI.TTF" },
+}
+
+local function LSM()
+  return LibStub and LibStub("LibSharedMedia-3.0", true)
+end
+
+local function FontList()
+  local names, seen = {}, {}
+  for _, f in ipairs(BUILTIN_FONTS) do
+    names[#names + 1] = f[1]
+    seen[f[1]] = true
+  end
+  local lsm = LSM()
+  if lsm then
+    for _, n in ipairs(lsm:List("font") or {}) do
+      if not seen[n] then names[#names + 1] = n; seen[n] = true end
+    end
+  end
+  return names
+end
+
+local function FontPath(name)
+  for _, f in ipairs(BUILTIN_FONTS) do
+    if f[1] == name then return type(f[2]) == "function" and f[2]() or f[2] end
+  end
+  local lsm = LSM()
+  local path = lsm and lsm:IsValid("font", name) and lsm:Fetch("font", name, true)
+  return path or STANDARD_TEXT_FONT
+end
+
 local function SizeButton(b)
   b:SetSize(DB.size, DB.size)
   if b.sbBorder then b.sbBorder:SetSize(DB.size + 3, DB.size + 2) end
@@ -140,7 +179,9 @@ local function SizeButton(b)
     cd:SetHideCountdownNumbers(not DB.cdText)
     if WeStyle() then
       local fs = cd.GetCountdownFontString and cd:GetCountdownFontString()
-      if fs then fs:SetFont(STANDARD_TEXT_FONT, CountdownSize(), "OUTLINE") end
+      if fs and not fs:SetFont(FontPath(DB.cdFont), CountdownSize(), "OUTLINE") then
+        fs:SetFont(STANDARD_TEXT_FONT, CountdownSize(), "OUTLINE")
+      end
       if formatter and cd.SetCountdownFormatter then cd:SetCountdownFormatter(formatter) end
     end
   end
@@ -420,7 +461,7 @@ end
 
 local function CreateOptions()
   local f = CreateFrame("Frame", "SelfBuffsOptions", UIParent)
-  f:SetSize(300, 590)
+  f:SetSize(300, 620)
   f:SetPoint("CENTER")
   f:SetFrameStrata("DIALOG")
   f:SetMovable(true)
@@ -489,7 +530,22 @@ local function CreateOptions()
   y = y - 40
   local sizeSlider = MakeSlider(f, "Cooldown text size", "cdTextSize", 0, 32, 1,
     function(v) return v == 0 and "Auto" or tostring(v) end, y)
-  y = y - 45
+  y = y - 35
+  Label(f, "Font", 20, y)
+  local fontButton = MakeButton(f, 165, 110, y + 4, function()
+    local names, i = FontList(), 0
+    for n, k in ipairs(names) do if k == DB.cdFont then i = n end end
+    local step = IsShiftKeyDown() and -1 or 1
+    DB.cdFont = names[(i - 1 + step) % #names + 1]; Apply()
+  end, function() return DB.cdFont end)
+  fontButton:SetScript("OnEnter", function(self)
+    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    GameTooltip:SetText("Cooldown text font")
+    GameTooltip:AddLine("Click for the next font, Shift-click for the previous.", 1, 1, 1, true)
+    GameTooltip:Show()
+  end)
+  fontButton:SetScript("OnLeave", GameTooltip_Hide)
+  y = y - 40
   local hideSlider = MakeSlider(f, "Hide text above", "cdHideAbove", 0, 600, 5, function(v)
     if v == 0 then return "Never" end
     if v >= 60 and v % 60 == 0 then return (v / 60) .. "m" end
@@ -497,7 +553,7 @@ local function CreateOptions()
   end, y)
   y = y - 30
   -- greyed out while tullaCTC styles the text
-  for _, sl in ipairs({ sizeSlider, hideSlider }) do
+  for _, sl in ipairs({ sizeSlider, fontButton, hideSlider }) do
     local base = sl.Sync
     sl.Sync = function(self)
       base(self)
@@ -520,7 +576,7 @@ local function CreateOptions()
   MakeButton(f, 125, 155, y, function() ResetPositions() end, function() return "Reset position" end)
   y = y - 30
   MakeButton(f, 260, 20, y, function()
-    for _, k in ipairs({ "size", "spacing", "rowSpacing", "perRow", "scale", "growX", "growY", "sort", "reverse", "cdText", "cdTextSize", "cdHideAbove" }) do
+    for _, k in ipairs({ "size", "spacing", "rowSpacing", "perRow", "scale", "growX", "growY", "sort", "reverse", "cdText", "cdTextSize", "cdFont", "cdHideAbove" }) do
       DB[k] = defaults[k]
     end
     Apply()
