@@ -21,6 +21,8 @@ local defaults = {
   cdFont = "Default", -- font name; see FontList()
   cdHideAbove = 0,   -- seconds; hide the numbers while more than this remains (0 = never)
   cdStyler = "selfbuffs", -- who styles the numbers when tullaCTC is loaded: "selfbuffs" | "tullactc"
+  attachDebuffs = true, -- debuffs follow the buffs instead of having their own position
+  debuffGap = 12,       -- space between the last possible buff row and the debuffs
   buffs   = { "TOPRIGHT", "UIParent", "TOPRIGHT", -205, -13 },
   debuffs = { "TOPRIGHT", "UIParent", "TOPRIGHT", -205, -160 },
 }
@@ -246,6 +248,24 @@ local function SizeMovers()
   end
 end
 
+-- Attached debuffs hang off the buffs mover, past the most rows the buffs
+-- can fill, so the two never overlap. With the default settings this lands
+-- exactly on the old default debuff position.
+local function PlaceMovers()
+  for _, g in ipairs(GROUPS) do
+    local m, pt = movers[g.key], DB[g.key]
+    m:ClearAllPoints()
+    if g.key == "debuffs" and DB.attachDebuffs then
+      local rows = math.ceil(GROUPS[1].max / DB.perRow)
+      local depth = rows * DB.size + (rows - 1) * DB.rowSpacing + DB.debuffGap
+      local corner = Corner()
+      m:SetPoint(corner, movers.buffs, corner, 0, DB.growY == "UP" and depth or -depth)
+    else
+      m:SetPoint(pt[1], UIParent, pt[3], pt[4], pt[5])
+    end
+  end
+end
+
 local function CreateMover(g)
   local m = CreateFrame("Frame", "SelfBuffs_" .. g.key, UIParent)
   m:SetMovable(true)
@@ -257,8 +277,6 @@ local function CreateMover(g)
     local p, _, rp, x, y = self:GetPoint()
     DB[g.key] = { p, "UIParent", rp, x, y }
   end)
-  local pt = DB[g.key]
-  m:SetPoint(pt[1], UIParent, pt[3], pt[4], pt[5])
 
   m.bg = m:CreateTexture(nil, "BACKGROUND")
   m.bg:SetAllPoints()
@@ -274,6 +292,7 @@ end
 local function Configure()
   BuildFormatter()
   SizeMovers()
+  PlaceMovers()
   local corner = Corner()
   local method, dir = SortArgs()
   local hDir = DB.growX == "RIGHT" and AnchorUtil.FlowDirection.Right or AnchorUtil.FlowDirection.Left
@@ -342,8 +361,9 @@ local unlocked = false
 local function SetUnlocked(on)
   if on and InCombatLockdown() then Msg("not in combat.") return end
   unlocked = on
-  for _, m in pairs(movers) do
-    m:EnableMouse(on)
+  for key, m in pairs(movers) do
+    -- attached debuffs move with the buffs, so only the buffs can be dragged
+    m:EnableMouse(on and not (key == "debuffs" and DB.attachDebuffs))
     m.bg:SetShown(on)
     m.text:SetShown(on)
   end
@@ -354,9 +374,8 @@ local function ResetPositions()
   for _, g in ipairs(GROUPS) do
     local pt = defaults[g.key]
     DB[g.key] = { unpack(pt) }
-    movers[g.key]:ClearAllPoints()
-    movers[g.key]:SetPoint(pt[1], UIParent, pt[3], pt[4], pt[5])
   end
+  PlaceMovers()
 end
 
 ---------------------------------------------------------------------------
@@ -461,7 +480,7 @@ end
 
 local function CreateOptions()
   local f = CreateFrame("Frame", "SelfBuffsOptions", UIParent)
-  f:SetSize(300, 620)
+  f:SetSize(300, 690)
   f:SetPoint("CENTER")
   f:SetFrameStrata("DIALOG")
   f:SetMovable(true)
@@ -569,6 +588,21 @@ local function CreateOptions()
       Msg("changes apply after combat.")
     end
   end)
+  y = y - 26
+  MakeCheck(f, "Attach debuffs to buffs", 20, y, function() return DB.attachDebuffs end, function(v)
+    DB.attachDebuffs = v; Apply()
+    if unlocked then SetUnlocked(true) end
+    SyncOptions()
+  end)
+  y = y - 40
+  local gapSlider = MakeSlider(f, "Debuff gap", "debuffGap", 0, 60, 1, "%d", y)
+  local gapSync = gapSlider.Sync
+  gapSlider.Sync = function(self) -- greyed out while debuffs are detached
+    gapSync(self)
+    self:EnableMouse(DB.attachDebuffs)
+    self:EnableMouseWheel(DB.attachDebuffs)
+    self:SetAlpha(DB.attachDebuffs and 1 or 0.4)
+  end
   y = y - 36
 
   MakeButton(f, 125, 20, y, function() SetUnlocked(not unlocked) end,
@@ -576,10 +610,11 @@ local function CreateOptions()
   MakeButton(f, 125, 155, y, function() ResetPositions() end, function() return "Reset position" end)
   y = y - 30
   MakeButton(f, 260, 20, y, function()
-    for _, k in ipairs({ "size", "spacing", "rowSpacing", "perRow", "scale", "growX", "growY", "sort", "reverse", "cdText", "cdTextSize", "cdFont", "cdHideAbove" }) do
+    for _, k in ipairs({ "size", "spacing", "rowSpacing", "perRow", "scale", "growX", "growY", "sort", "reverse", "cdText", "cdTextSize", "cdFont", "cdHideAbove", "attachDebuffs", "debuffGap" }) do
       DB[k] = defaults[k]
     end
     Apply()
+    if unlocked then SetUnlocked(true) end
     SyncOptions()
   end, function() return "Reset all settings" end)
 
@@ -618,6 +653,7 @@ ev:SetScript("OnEvent", function(_, event)
     end
     for _, g in ipairs(GROUPS) do CreateMover(g) end
     SizeMovers()
+    PlaceMovers()
     OutOfCombat("build", Build)
     if DB.hideBlizz then OutOfCombat("blizz", function() SetBlizzardHidden(true) end) end
   elseif event == "PLAYER_REGEN_DISABLED" then
