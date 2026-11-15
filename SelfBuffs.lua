@@ -22,7 +22,6 @@ local defaults = {
   cdHideAbove = 0,   -- seconds; hide the numbers while more than this remains (0 = never)
   cdStyler = "selfbuffs", -- who styles the numbers when tullaCTC is loaded: "selfbuffs" | "tullactc"
   attachDebuffs = true, -- debuffs follow the buffs instead of having their own position
-  debuffGap = 12,       -- space between the last possible buff row and the debuffs
   buffs   = { "TOPRIGHT", "UIParent", "TOPRIGHT", -205, -13 },
   debuffs = { "TOPRIGHT", "UIParent", "TOPRIGHT", -205, -160 },
 }
@@ -248,18 +247,20 @@ local function SizeMovers()
   end
 end
 
--- Attached debuffs hang off the buffs mover, past the most rows the buffs
--- can fill, so the two never overlap. With the default settings this lands
--- exactly on the old default debuff position.
+-- Attached debuffs hang off the edge of the buffs container, one row
+-- spacing past it. The container sizes itself to the buffs it shows, so the
+-- client moves the debuffs as buff rows come and go, in combat too, without
+-- this addon reading any aura. Until the container exists they hang off the
+-- buffs mover (one row tall).
 local function PlaceMovers()
   for _, g in ipairs(GROUPS) do
     local m, pt = movers[g.key], DB[g.key]
     m:ClearAllPoints()
     if g.key == "debuffs" and DB.attachDebuffs then
-      local rows = math.ceil(GROUPS[1].max / DB.perRow)
-      local depth = rows * DB.size + (rows - 1) * DB.rowSpacing + DB.debuffGap
-      local corner = Corner()
-      m:SetPoint(corner, movers.buffs, corner, 0, DB.growY == "UP" and depth or -depth)
+      local h = DB.growX == "RIGHT" and "LEFT" or "RIGHT"
+      local up = DB.growY == "UP"
+      local near, far = up and "BOTTOM" or "TOP", up and "TOP" or "BOTTOM"
+      m:SetPoint(near .. h, containers.buffs or movers.buffs, far .. h, 0, up and DB.rowSpacing or -DB.rowSpacing)
     else
       m:SetPoint(pt[1], UIParent, pt[3], pt[4], pt[5])
     end
@@ -480,7 +481,7 @@ end
 
 local function CreateOptions()
   local f = CreateFrame("Frame", "SelfBuffsOptions", UIParent)
-  f:SetSize(300, 690)
+  f:SetSize(300, 650)
   f:SetPoint("CENTER")
   f:SetFrameStrata("DIALOG")
   f:SetMovable(true)
@@ -594,15 +595,6 @@ local function CreateOptions()
     if unlocked then SetUnlocked(true) end
     SyncOptions()
   end)
-  y = y - 40
-  local gapSlider = MakeSlider(f, "Debuff gap", "debuffGap", 0, 60, 1, "%d", y)
-  local gapSync = gapSlider.Sync
-  gapSlider.Sync = function(self) -- greyed out while debuffs are detached
-    gapSync(self)
-    self:EnableMouse(DB.attachDebuffs)
-    self:EnableMouseWheel(DB.attachDebuffs)
-    self:SetAlpha(DB.attachDebuffs and 1 or 0.4)
-  end
   y = y - 36
 
   MakeButton(f, 125, 20, y, function() SetUnlocked(not unlocked) end,
@@ -610,7 +602,7 @@ local function CreateOptions()
   MakeButton(f, 125, 155, y, function() ResetPositions() end, function() return "Reset position" end)
   y = y - 30
   MakeButton(f, 260, 20, y, function()
-    for _, k in ipairs({ "size", "spacing", "rowSpacing", "perRow", "scale", "growX", "growY", "sort", "reverse", "cdText", "cdTextSize", "cdFont", "cdHideAbove", "attachDebuffs", "debuffGap" }) do
+    for _, k in ipairs({ "size", "spacing", "rowSpacing", "perRow", "scale", "growX", "growY", "sort", "reverse", "cdText", "cdTextSize", "cdFont", "cdHideAbove", "attachDebuffs" }) do
       DB[k] = defaults[k]
     end
     Apply()
