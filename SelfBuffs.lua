@@ -248,17 +248,35 @@ local function SizeMovers()
   end
 end
 
--- Rows of buff icons on screen, counted from the buttons the container
--- shows (no aura is read). Kept as is if the client refuses the count.
-local buffRows = 1
-local function CountBuffRows()
-  pcall(function()
-    local n = 0
-    for _, b in ipairs(buttons) do
-      if not b.sbDebuff and b:IsShown() then n = n + 1 end
-    end
-    buffRows = math.ceil(n / DB.perRow)
+-- Rows of buff icons on screen. The number of buff slots the client
+-- reports is only a count of return values, never aura data, so it can be
+-- read at any time. If the client refuses it, try the shown buttons; if
+-- that is refused too, leave room for every row the buffs could fill.
+local buffRows, rowSource = 1, "none"
+
+local function SlotCount(...) return select("#", ...) - 1 end
+
+local function CountBuffs()
+  local max = GROUPS[1].max
+  local ok, n = pcall(function()
+    return SlotCount(C_UnitAuras.GetAuraSlots("player", "HELPFUL", max))
   end)
+  if ok and type(n) == "number" and n >= 0 then return math.min(n, max), "aura slots" end
+  ok, n = pcall(function()
+    local shown = 0
+    for _, b in ipairs(buttons) do
+      if not b.sbDebuff and b:IsShown() == true then shown = shown + 1 end
+    end
+    return shown
+  end)
+  if ok and n > 0 then return n, "shown buttons" end
+  return max, "fallback (all rows)"
+end
+
+local function CountBuffRows()
+  local n
+  n, rowSource = CountBuffs()
+  buffRows = math.ceil(n / DB.perRow)
 end
 
 -- Attached debuffs sit one row below the last buff row (above it when rows
@@ -701,5 +719,8 @@ SlashCmdList.SELFBUFFS = function(msg)
   if cmd == "unlock" then SetUnlocked(true)
   elseif cmd == "lock" then SetUnlocked(false)
   elseif cmd == "reset" then ResetPositions()
+  elseif cmd == "rows" then
+    CountBuffRows()
+    Msg(("buff rows: %d (counted from %s)"):format(buffRows, rowSource))
   else ToggleOptions() end
 end
