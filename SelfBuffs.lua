@@ -224,6 +224,7 @@ local function InitButton(button, debuff)
     })
   end
   pcall(button.SetTooltipAnchorPoint, button, "ANCHOR_BOTTOMLEFT")
+  button.sbDebuff = debuff
   buttons[#buttons + 1] = button
 end
 
@@ -247,24 +248,49 @@ local function SizeMovers()
   end
 end
 
--- Attached debuffs hang off the edge of the buffs container, one row
--- spacing past it. The container sizes itself to the buffs it shows, so the
--- client moves the debuffs as buff rows come and go, in combat too, without
--- this addon reading any aura. Until the container exists they hang off the
--- buffs mover (one row tall).
+-- Rows of buff icons on screen, counted from the buttons the container
+-- shows (no aura is read). Kept as is if the client refuses the count.
+local buffRows = 1
+local function CountBuffRows()
+  pcall(function()
+    local n = 0
+    for _, b in ipairs(buttons) do
+      if not b.sbDebuff and b:IsShown() then n = n + 1 end
+    end
+    buffRows = math.ceil(n / DB.perRow)
+  end)
+end
+
+-- Attached debuffs sit one row below the last buff row (above it when rows
+-- grow up). The client won't let them anchor to the buffs container itself,
+-- so they hang off the buffs mover, moved out of combat only.
 local function PlaceMovers()
+  CountBuffRows()
   for _, g in ipairs(GROUPS) do
     local m, pt = movers[g.key], DB[g.key]
     m:ClearAllPoints()
     if g.key == "debuffs" and DB.attachDebuffs then
-      local h = DB.growX == "RIGHT" and "LEFT" or "RIGHT"
-      local up = DB.growY == "UP"
-      local near, far = up and "BOTTOM" or "TOP", up and "TOP" or "BOTTOM"
-      m:SetPoint(near .. h, containers.buffs or movers.buffs, far .. h, 0, up and DB.rowSpacing or -DB.rowSpacing)
+      local depth = buffRows * (DB.size + DB.rowSpacing)
+      local corner = Corner()
+      m:SetPoint(corner, movers.buffs, corner, 0, DB.growY == "UP" and depth or -depth)
     else
       m:SetPoint(pt[1], UIParent, pt[3], pt[4], pt[5])
     end
   end
+end
+
+-- Buff rows change: move the debuffs on the next frame (after the
+-- container has laid out its buttons), or after combat.
+local followQueued = false
+local function FollowBuffs()
+  if not DB.attachDebuffs or followQueued then return end
+  followQueued = true
+  C_Timer.After(0, function()
+    followQueued = false
+    local rows = buffRows
+    CountBuffRows()
+    if buffRows ~= rows then OutOfCombat("anchor", PlaceMovers) end
+  end)
 end
 
 local function CreateMover(g)
@@ -340,6 +366,7 @@ local function Build()
     return
   end
   Configure()
+  FollowBuffs()
 end
 
 -- Any setting change goes through here.
@@ -625,8 +652,11 @@ local ev = CreateFrame("Frame")
 ev:RegisterEvent("PLAYER_LOGIN")
 ev:RegisterEvent("PLAYER_REGEN_ENABLED")
 ev:RegisterEvent("PLAYER_REGEN_DISABLED")
+ev:RegisterUnitEvent("UNIT_AURA", "player")
 ev:SetScript("OnEvent", function(_, event)
-  if event == "PLAYER_LOGIN" then
+  if event == "UNIT_AURA" then
+    if DB then FollowBuffs() end
+  elseif event == "PLAYER_LOGIN" then
     SelfBuffsDB = SelfBuffsDB or {}
     DB = SelfBuffsDB
     for k, v in pairs(defaults) do
@@ -657,6 +687,7 @@ ev:SetScript("OnEvent", function(_, event)
     if run.build then run.build() end
     for k, fn in pairs(run) do if k ~= "build" then fn() end end
     if staleButtons and not run.config then RestyleButtons() end
+    if not run.config and not run.anchor and DB.attachDebuffs then PlaceMovers() end
   end
 end)
 
